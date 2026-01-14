@@ -9,6 +9,9 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
 
+  <!-- LZ-String (URL 압축/해제) -->
+  <script src="https://cdn.jsdelivr.net/npm/lz-string@1.4.4/libs/lz-string.min.js"></script>
+
   <!-- Korean font -->
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet" />
 
@@ -20,6 +23,7 @@
     .title-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; padding-bottom: 1rem; }
     .modal-body { user-select: none; }
     .small-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .failed-textarea { font-size: 12px; line-height: 1.25; }
   </style>
 </head>
 
@@ -28,6 +32,10 @@
 
     <div class="title-bar">
       <h1 class="h4 m-0">캐릭터챗 외부이미지 미리보기</h1>
+      <div class="d-flex gap-2">
+        <button class="btn btn-outline-info btn-sm" id="copyPageLinkBtn">현재 링크 복사</button>
+        <button class="btn btn-outline-secondary btn-sm" id="resetBtn">초기화</button>
+      </div>
     </div>
 
     <!-- Input form -->
@@ -41,7 +49,7 @@
         </div>
         <div class="col-md">
           <label for="cloth" class="form-label">
-            의상 코드 (쉼표로 구분, 범위: 01..12 / a1..a4 / a..f 가능, 없으면 빈칸도 가능)
+            의상 코드 (쉼표로 구분, 범위: 01..12 / a1..a4 / a..f 가능, 빈칸도 가능)
           </label>
           <input id="cloth" class="form-control" placeholder="">
         </div>
@@ -63,60 +71,37 @@
         </div>
       </div>
 
-      <!-- Preset UI -->
-      <div class="row g-2 mt-3 align-items-end">
-        <div class="col-md-3">
-          <label class="form-label">저장된 템플릿</label>
-          <select id="presetSelect" class="form-select"></select>
-        </div>
-
-        <div class="col-md-3">
-          <label for="presetName" class="form-label">프리셋 이름</label>
-          <input id="presetName" class="form-control" placeholder="예: 기본, a세트">
-        </div>
-
-        <div class="col-md-auto d-flex gap-2">
-          <button class="btn btn-outline-light" id="savePresetBtn">저장</button>
-          <button class="btn btn-outline-secondary" id="deletePresetBtn">삭제</button>
-        </div>
-
-        <div class="col-md-auto d-flex gap-2 ms-auto">
-          <button class="btn btn-outline-info" id="exportPresetsBtn">내보내기</button>
-
-          <label class="btn btn-outline-info mb-0">
-            가져오기 <input type="file" id="importPresetsFile" accept="application/json" hidden>
-          </label>
-
-          <button class="btn btn-outline-warning" id="copyPresetsBtn">JSON 복사</button>
-          <button class="btn btn-outline-warning" id="pastePresetsBtn">JSON 붙여넣기</button>
-        </div>
-      </div>
-
       <div class="form-text mt-2 text-muted">
-        범위 입력 예) a1..a4, 01..12, a..f. 빈칸도 코드로 인식됨(예: 상황에 빈칸을 넣으면 "상황" 치환이 공백).
+        범위 입력 예) a1..a4, 01..12, a..f. 빈칸도 코드로 인식됨(예: 상황에 빈칸을 넣으면 "상황" 치환이 공백).<br>
+        이제 프리셋 저장은 URL에 자동 저장됨 → PC/모바일에서 같은 링크를 열면 동일하게 복원됨.
       </div>
     </div>
 
     <!-- Gallery container -->
     <div class="row" id="gallery-container"></div>
 
-    <div id="failed-items-panel" class="card border-secondary text-muted rounded" style="display:none;">
+    <!-- 하단: 출력되지 않은 이미지 목록(접기/펼치기) -->
+    <div id="failed-items-panel" class="card border-secondary text-muted rounded mt-3" style="display:none;">
       <div class="card-header p-2">
         <h6 class="mb-0">
           <a class="text-muted text-decoration-none d-flex align-items-center"
              data-bs-toggle="collapse"
              href="#failed-items-collapse"
              role="button"
-             aria-expanded="false"
+             aria-expanded="true"
              aria-controls="failed-items-collapse">
-            없는 이미지 목록
+            출력되지 않은 이미지 목록
             <span class="ms-auto small">(접기/펼치기)</span>
           </a>
         </h6>
       </div>
-      <div id="failed-items-collapse" class="collapse">
+      <div id="failed-items-collapse" class="collapse show">
         <div class="card-body p-2">
-          <ul class="list-unstyled small mb-0" id="failed-items"></ul>
+          <textarea id="failed-items-text"
+                    class="form-control failed-textarea"
+                    rows="10"
+                    readonly
+                    spellcheck="false"></textarea>
         </div>
       </div>
     </div>
@@ -176,248 +161,8 @@
 
   <script>
     // =========================
-    // Query / Navigation helpers
+    // Toast (Bootstrap)
     // =========================
-    function getQueryParam(name) {
-      const urlParams = new URLSearchParams(window.location.search);
-      return urlParams.get(name)?.replaceAll(',', '~');
-    }
-
-    function redirectWithParams(params) {
-      const url = new URL(window.location.href);
-      url.search = new URLSearchParams(params).toString();
-      window.location.href = url.toString();
-    }
-
-    function setFormValues(template, character, cloth, situation) {
-      if (template == null && character == null && situation == null && cloth == null) {
-        template = 'https://si-ran.com/gg/캐릭터-의상-상황.webp';
-        character = 'a,b,c,d,e,f,i';
-        cloth = '1,2';
-        situation = '1,3..11';
-      } else {
-        character = character?.replaceAll('~', ',');
-        cloth = cloth?.replaceAll('~', ',');
-        situation = situation?.replaceAll('~', ',');
-      }
-
-      document.getElementById('template').value = template ?? '';
-      document.getElementById('character').value = character ?? '';
-      document.getElementById('cloth').value = cloth ?? '';
-      document.getElementById('situation').value = situation ?? '';
-    }
-
-    async function checkImageExists(url) {
-      try {
-        const response = await fetch(url, { method: 'HEAD' });
-        return response.ok;
-      } catch (error) {
-        // CORS 등으로 실패할 수 있으니 "있다고 가정"
-        return true;
-      }
-    }
-
-    // =========================
-    // ✅ Range expansion for ALL codes (캐릭터/의상/상황)
-    // - Supports:
-    //   1) 숫자 범위: 01..84 (패딩 유지)
-    //   2) 알파 범위: a..f, A..F
-    //   3) 접두+숫자 범위: a1..a4, img09..img12 (패딩 유지)
-    // - 빈칸 토큰도 유지: "a,,b" => ["a", "", "b"]
-    // =========================
-    function expandRangeToken(token) {
-      // keep blanks as valid code
-      if (token === '') return [''];
-
-      if (!token.includes('..')) return [token];
-
-      const parts = token.split('..');
-      if (parts.length !== 2) return [token];
-
-      const leftRaw = parts[0].trim();
-      const rightRaw = parts[1].trim();
-
-      // if either side empty, treat as literal
-      if (leftRaw === '' || rightRaw === '') return [token];
-
-      // 1) numeric..numeric
-      if (/^\d+$/.test(leftRaw) && /^\d+$/.test(rightRaw)) {
-        const len = leftRaw.length;
-        const start = Number(leftRaw);
-        const end = Number(rightRaw);
-        if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) return [token];
-        const out = [];
-        for (let i = start; i <= end; i++) out.push(String(i).padStart(len, '0'));
-        return out;
-      }
-
-      // 2) single letter..single letter
-      if (/^[A-Za-z]$/.test(leftRaw) && /^[A-Za-z]$/.test(rightRaw)) {
-        const a = leftRaw.charCodeAt(0);
-        const b = rightRaw.charCodeAt(0);
-        if (a > b) return [token];
-        const out = [];
-        for (let c = a; c <= b; c++) out.push(String.fromCharCode(c));
-        return out;
-      }
-
-      // 3) prefix+digits .. prefix+digits (same prefix)
-      const m1 = leftRaw.match(/^(.+?)(\d+)$/);
-      const m2 = rightRaw.match(/^(.+?)(\d+)$/);
-      if (m1 && m2) {
-        const p1 = m1[1], n1 = m1[2];
-        const p2 = m2[1], n2 = m2[2];
-        if (p1 !== p2) return [token];
-
-        const len = n1.length; // keep left padding
-        const start = Number(n1);
-        const end = Number(n2);
-        if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) return [token];
-
-        const out = [];
-        for (let i = start; i <= end; i++) out.push(p1 + String(i).padStart(len, '0'));
-        return out;
-      }
-
-      return [token];
-    }
-
-    function expandCodesFromParam(paramWithTilde) {
-      // paramWithTilde can be "" (meaning one blank token) or null (not provided)
-      if (paramWithTilde == null) return null;
-
-      // preserve empty segments: "a~~b" => ["a", "", "b"]
-      const rawTokens = paramWithTilde.split('~').map(s => s.trim());
-
-      const expanded = [];
-      for (const t of rawTokens) {
-        const chunks = expandRangeToken(t);
-        for (const c of chunks) expanded.push(c);
-      }
-      return expanded;
-    }
-
-    // =========================
-    // ✅ Presets (템플릿 저장/내보내기/가져오기)
-    // =========================
-    const PRESET_KEY = "image_viewer_presets_v1";
-
-    function loadPresetStore() {
-      try {
-        const raw = localStorage.getItem(PRESET_KEY);
-        if (!raw) return { version: 1, presets: [] };
-        const data = JSON.parse(raw);
-        if (!data || !Array.isArray(data.presets)) return { version: 1, presets: [] };
-        return data;
-      } catch {
-        return { version: 1, presets: [] };
-      }
-    }
-
-    function savePresetStore(data) {
-      localStorage.setItem(PRESET_KEY, JSON.stringify(data));
-    }
-
-    function normalizePreset(p) {
-      return {
-        name: (p?.name ?? '').toString(),
-        template: (p?.template ?? '').toString(),
-        character: (p?.character ?? '').toString(),
-        cloth: (p?.cloth ?? '').toString(),
-        situation: (p?.situation ?? '').toString(),
-        savedAt: p?.savedAt ?? new Date().toISOString(),
-      };
-    }
-
-    function getFormAsPreset(nameOverride) {
-      const name = (nameOverride ?? document.getElementById("presetName").value).trim();
-      return normalizePreset({
-        name,
-        template: document.getElementById("template").value.trim(),
-        character: document.getElementById("character").value.trim(),
-        cloth: document.getElementById("cloth").value.trim(),
-        situation: document.getElementById("situation").value.trim(),
-        savedAt: new Date().toISOString(),
-      });
-    }
-
-    function applyPresetToForm(preset) {
-      const p = normalizePreset(preset);
-      document.getElementById("template").value = p.template;
-      document.getElementById("character").value = p.character;
-      document.getElementById("cloth").value = p.cloth;
-      document.getElementById("situation").value = p.situation;
-      document.getElementById("presetName").value = p.name;
-    }
-
-    function findPresetIndexByName(store, name) {
-      return store.presets.findIndex(p => (p.name || "") === name);
-    }
-
-    function exportPresetsAsFile() {
-      const store = loadPresetStore();
-      const json = JSON.stringify(store, null, 2);
-      const blob = new Blob([json], { type: "application/json;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "image_viewer_presets.json";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-
-      URL.revokeObjectURL(url);
-    }
-
-    async function copyPresetsToClipboard() {
-      const store = loadPresetStore();
-      const json = JSON.stringify(store, null, 2);
-      await navigator.clipboard.writeText(json);
-      toast("프리셋 JSON 복사됨");
-    }
-
-    async function pastePresetsFromClipboard() {
-      const text = await navigator.clipboard.readText();
-      if (!text?.trim()) {
-        toast("클립보드가 비었음");
-        return;
-      }
-      importPresetsFromText(text);
-    }
-
-    function importPresetsFromText(text) {
-      let data;
-      try { data = JSON.parse(text); }
-      catch { alert("JSON 파싱 실패"); return; }
-
-      if (!data || !Array.isArray(data.presets)) {
-        alert("형식 오류: { presets: [...] } 형태가 아님");
-        return;
-      }
-
-      const store = loadPresetStore();
-      const incoming = data.presets.map(normalizePreset);
-
-      // 같은 이름이면 덮어쓰기
-      for (const p of incoming) {
-        if (!p.name) continue;
-        const idx = findPresetIndexByName(store, p.name);
-        if (idx >= 0) store.presets[idx] = p;
-        else store.presets.push(p);
-      }
-
-      savePresetStore(store);
-      refreshPresetSelect(true);
-      toast("가져오기 완료");
-    }
-
-    function importPresetsFromFile(file) {
-      const reader = new FileReader();
-      reader.onload = () => importPresetsFromText(reader.result);
-      reader.readAsText(file, "utf-8");
-    }
-
     function toast(message) {
       const wrapper = document.createElement("div");
       wrapper.className = "toast align-items-center text-bg-dark border-0 position-fixed bottom-0 end-0 m-3";
@@ -436,308 +181,456 @@
       wrapper.addEventListener("hidden.bs.toast", () => wrapper.remove());
     }
 
-    function refreshPresetSelect(keepName) {
-      const select = document.getElementById("presetSelect");
-      if (!select) return;
-
-      const store = loadPresetStore();
-      const currentValue = select.value;
-      const currentName = keepName ? document.getElementById("presetName").value : "";
-
-      select.innerHTML = "";
-      const opt0 = document.createElement("option");
-      opt0.value = "";
-      opt0.textContent = "선택...";
-      select.appendChild(opt0);
-
-      const sorted = store.presets.slice().sort((a, b) => (b.savedAt || "").localeCompare(a.savedAt || ""));
-      sorted.forEach((p, i) => {
-        const opt = document.createElement("option");
-        opt.value = String(i);
-        opt.textContent = p.name ? p.name : "(이름없음)";
-        select.appendChild(opt);
-      });
-
-      if (currentValue && Number(currentValue) < sorted.length) select.value = currentValue;
-      else select.value = "";
-
-      if (keepName) document.getElementById("presetName").value = currentName;
+    // =========================
+    // URL 압축 상태 (B안)
+    // =========================
+    function encodeStateToP(state) {
+      // state: {t,c,l,s,d}
+      const json = JSON.stringify(state);
+      return LZString.compressToEncodedURIComponent(json);
     }
 
-    function initPresetUI() {
-      refreshPresetSelect(true);
+    function decodeStateFromP(p) {
+      try {
+        const json = LZString.decompressFromEncodedURIComponent(p);
+        if (!json) return null;
+        const obj = JSON.parse(json);
+        if (!obj || typeof obj !== "object") return null;
+        return obj;
+      } catch {
+        return null;
+      }
+    }
 
-      document.getElementById("presetSelect")?.addEventListener("change", (e) => {
-        const store = loadPresetStore();
-        const idx = Number(e.target.value);
-        if (!e.target.value || Number.isNaN(idx)) return;
+    function readStateFromUrl() {
+      const url =C = new URL(window.location.href);
+      const sp = urlC.searchParams;
 
-        const sorted = store.presets.slice().sort((a, b) => (b.savedAt || "").localeCompare(a.savedAt || ""));
-        const preset = sorted[idx];
-        if (!preset) return;
+      // 1) 새 방식: p=
+      const p = sp.get("p");
+      if (p) {
+        const obj = decodeStateFromP(p);
+        if (obj) return normalizeState(obj);
+      }
 
-        applyPresetToForm(preset);
-        toast("프리셋 적용됨");
+      // 2) 구버전 호환: t,c,l,s,d
+      const legacy = {
+        t: sp.get("t") ?? sp.get("template") ?? "",
+        c: sp.get("c") ?? sp.get("character") ?? "",
+        l: sp.get("l") ?? sp.get("cloth") ?? "",
+        s: sp.get("s") ?? sp.get("situation") ?? "",
+        d: sp.get("d") ?? sp.get("detail") ?? ""
+      };
+      // legacy는 , 대신 ~ 쓰던 구조가 있을 수 있어서 그대로 유지
+      return normalizeState(legacy);
+    }
+
+    function normalizeState(obj) {
+      return {
+        t: (obj.t ?? "").toString(),
+        c: (obj.c ?? "").toString(),
+        l: (obj.l ?? "").toString(),
+        s: (obj.s ?? "").toString(),
+        d: (obj.d ?? "").toString(),
+      };
+    }
+
+    function writeStateToUrl(state, { replace = false } = {}) {
+      const url = new URL(window.location.href);
+      const p = encodeStateToP(normalizeState(state));
+      url.search = new URLSearchParams({ p }).toString();
+
+      if (replace) history.replaceState(null, "", url.toString());
+      else history.pushState(null, "", url.toString());
+    }
+
+    // =========================
+    // Form helpers
+    // =========================
+    function setFormValuesFromState(st) {
+      // 입력폼은 사용자 친화적으로 "," 기반을 기본으로 유지
+      // URL에는 어떤 문자가 들어가든 p로 압축되므로 안전
+      document.getElementById("template").value = st.t ?? "";
+      document.getElementById("character").value = (st.c ?? "").replaceAll("~", ",");
+      document.getElementById("cloth").value = (st.l ?? "").replaceAll("~", ",");
+      document.getElementById("situation").value = (st.s ?? "").replaceAll("~", ",");
+    }
+
+    function getStateFromForm(detailValue = "") {
+      // 빈칸 토큰 유지 위해 "," -> "~" 로만 변환해서 저장 (a,,b => a~~b)
+      const t = document.getElementById("template").value.trim();
+      const c = document.getElementById("character").value.replaceAll(",", "~");
+      const l = document.getElementById("cloth").value.replaceAll(",", "~");
+      const s = document.getElementById("situation").value.replaceAll(",", "~");
+      return normalizeState({ t, c, l, s, d: detailValue });
+    }
+
+    function setDefaultIfEmpty(st) {
+      const emptyAll = !st.t && !st.c && !st.l && !st.s;
+      if (!emptyAll) return st;
+
+      return normalizeState({
+        t: "https://si-ran.com/gg/캐릭터-의상-상황.webp",
+        c: "a~b~c~d~e~f~i",
+        l: "1~2",
+        s: "1~3..11",
+        d: ""
       });
+    }
 
-      document.getElementById("savePresetBtn")?.addEventListener("click", () => {
-        const name = document.getElementById("presetName").value.trim();
-        if (!name) { alert("프리셋 이름을 입력해줘"); return; }
+    // =========================
+    // (가능하면) 404 요청 자체를 줄이는 존재 확인
+    // =========================
+    async function probeImage(url) {
+      try {
+        const resp = await fetch(url, { method: "HEAD", cache: "no-store" });
+        return resp.ok;
+      } catch {
+        return null; // CORS/네트워크로 확인불가
+      }
+    }
 
-        const store = loadPresetStore();
-        const p = getFormAsPreset(name);
+    // =========================
+    // Range expansion for ALL codes (캐릭터/의상/상황)
+    // =========================
+    function expandRangeToken(token) {
+      if (token === "") return [""]; // 빈칸도 유효
 
-        const idx = findPresetIndexByName(store, name);
-        if (idx >= 0) store.presets[idx] = p;
-        else store.presets.push(p);
+      if (!token.includes("..")) return [token];
 
-        savePresetStore(store);
-        refreshPresetSelect(true);
-        toast("저장 완료");
-      });
+      const parts = token.split("..");
+      if (parts.length !== 2) return [token];
 
-      document.getElementById("deletePresetBtn")?.addEventListener("click", () => {
-        const name = document.getElementById("presetName").value.trim();
-        if (!name) { alert("삭제할 프리셋 이름을 입력해줘"); return; }
+      const leftRaw = parts[0].trim();
+      const rightRaw = parts[1].trim();
+      if (leftRaw === "" || rightRaw === "") return [token];
 
-        const store = loadPresetStore();
-        const idx = findPresetIndexByName(store, name);
-        if (idx < 0) { alert("해당 이름의 프리셋이 없음"); return; }
+      // numeric..numeric (패딩 유지)
+      if (/^\d+$/.test(leftRaw) && /^\d+$/.test(rightRaw)) {
+        const len = leftRaw.length;
+        const start = Number(leftRaw);
+        const end = Number(rightRaw);
+        if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) return [token];
+        const out = [];
+        for (let i = start; i <= end; i++) out.push(String(i).padStart(len, "0"));
+        return out;
+      }
 
-        store.presets.splice(idx, 1);
-        savePresetStore(store);
-        refreshPresetSelect(true);
-        toast("삭제 완료");
-      });
+      // single letter..single letter
+      if (/^[A-Za-z]$/.test(leftRaw) && /^[A-Za-z]$/.test(rightRaw)) {
+        const a = leftRaw.charCodeAt(0);
+        const b = rightRaw.charCodeAt(0);
+        if (a > b) return [token];
+        const out = [];
+        for (let c = a; c <= b; c++) out.push(String.fromCharCode(c));
+        return out;
+      }
 
-      document.getElementById("exportPresetsBtn")?.addEventListener("click", exportPresetsAsFile);
+      // prefix+digits .. prefix+digits (same prefix, padding 유지)
+      const m1 = leftRaw.match(/^(.+?)(\d+)$/);
+      const m2 = rightRaw.match(/^(.+?)(\d+)$/);
+      if (m1 && m2) {
+        const p1 = m1[1], n1 = m1[2];
+        const p2 = m2[1], n2 = m2[2];
+        if (p1 !== p2) return [token];
 
-      document.getElementById("importPresetsFile")?.addEventListener("change", (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        importPresetsFromFile(file);
-        e.target.value = "";
-      });
+        const len = n1.length;
+        const start = Number(n1);
+        const end = Number(n2);
+        if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) return [token];
 
-      document.getElementById("copyPresetsBtn")?.addEventListener("click", async () => {
-        try { await copyPresetsToClipboard(); }
-        catch { alert("클립보드 복사 실패(HTTPS/권한 필요할 수 있음)"); }
-      });
+        const out = [];
+        for (let i = start; i <= end; i++) out.push(p1 + String(i).padStart(len, "0"));
+        return out;
+      }
 
-      document.getElementById("pastePresetsBtn")?.addEventListener("click", async () => {
-        try { await pastePresetsFromClipboard(); }
-        catch {
-          const txt = prompt("붙여넣을 프리셋 JSON을 넣어줘");
-          if (txt) importPresetsFromText(txt);
+      return [token];
+    }
+
+    function expandCodesFromParam(paramWithTilde) {
+      if (paramWithTilde == null) return null;
+      const rawTokens = paramWithTilde.split("~").map(s => s.trim()); // a~~b => ["a","","b"]
+      const expanded = [];
+      for (const t of rawTokens) {
+        const chunks = expandRangeToken(t);
+        for (const c of chunks) expanded.push(c);
+      }
+      return expanded;
+    }
+
+    // =========================
+    // Failed list UI helpers
+    // =========================
+    const container = document.getElementById("gallery-container");
+    const failedPanel = document.getElementById("failed-items-panel");
+    const failedText = document.getElementById("failed-items-text");
+
+    let failedUrls = new Set();
+    function addFailed(url) {
+      if (!url) return;
+      failedUrls.add(url);
+      renderFailed();
+    }
+    function renderFailed() {
+      const arr = Array.from(failedUrls);
+      if (arr.length === 0) {
+        failedPanel.style.display = "none";
+        failedText.value = "";
+        return;
+      }
+      failedPanel.style.display = "block";
+      failedText.value = arr.join("\n");
+    }
+
+    // =========================
+    // Concurrency limit for async tasks
+    // =========================
+    async function asyncPool(limit, array, iteratorFn) {
+      const ret = [];
+      const executing = [];
+      for (const item of array) {
+        const p = Promise.resolve().then(() => iteratorFn(item));
+        ret.push(p);
+
+        if (limit <= array.length) {
+          const e = p.then(() => executing.splice(executing.indexOf(e), 1));
+          executing.push(e);
+          if (executing.length >= limit) await Promise.race(executing);
         }
-      });
+      }
+      return Promise.all(ret);
     }
 
     // =========================
-    // Form submission (querystring)
-    // - 빈칸도 유지하기 위해 X 같은 대체값을 더 이상 쓰지 않음
+    // Rendering
     // =========================
-    document.getElementById('generate-btn')?.addEventListener('click', () => {
-      const template = document.getElementById('template').value.trim();
+    let currentState = null;
 
-      // 빈칸 유지: "a,,b" -> "a~~b"
-      const character = document.getElementById('character').value.replaceAll(',', '~');
-      const cloth = document.getElementById('cloth').value.replaceAll(',', '~');
-      const situation = document.getElementById('situation').value.replaceAll(',', '~');
+    function buildUrlFromParts(template, char, clo, sit) {
+      return template
+        .replace("캐릭터", char ?? "")
+        .replace("의상", clo ?? "")
+        .replace("상황", sit ?? "");
+    }
 
-      redirectWithParams({ t: template, c: character, l: cloth, s: situation });
-    });
+    function clearView() {
+      container.innerHTML = "";
+      failedUrls = new Set();
+      renderFailed();
+    }
 
-    // =========================
-    // Gallery generation
-    // =========================
-    const templateParam = getQueryParam('t') ?? getQueryParam('template');
-    const characterParam = getQueryParam('c') ?? getQueryParam('character');
-    const clothParam = getQueryParam('l') ?? getQueryParam('cloth');
-    const situationParam = getQueryParam('s') ?? getQueryParam('situation');
-    const detailParam = getQueryParam('d') ?? getQueryParam('detail');
-    const container = document.getElementById('gallery-container');
+    async function renderFromState(st, { writeUrl = true, replaceUrl = false } = {}) {
+      st = setDefaultIfEmpty(normalizeState(st));
+      currentState = st;
 
-    setFormValues(templateParam, characterParam, clothParam, situationParam);
-    initPresetUI();
+      // URL 반영 (항상 p=만 쓰는 B안)
+      if (writeUrl) writeStateToUrl(st, { replace: replaceUrl });
 
-    // 템플릿/캐릭터/상황은 필수. 의상은 빈칸도 허용(예: 의상 코드 자체를 공백으로 하나만 쓰는 경우)
-    const hasRequired =
-      templateParam != null &&
-      characterParam != null &&
-      situationParam != null &&
-      clothParam != null;
+      // 폼 반영
+      setFormValuesFromState(st);
 
-    if (hasRequired && templateParam !== '' && characterParam !== '' && situationParam !== '') {
-      const characters = expandCodesFromParam(characterParam);
-      const clothes = expandCodesFromParam(clothParam) ?? ['']; // defensive
-      const situations = expandCodesFromParam(situationParam);
+      // 뷰 초기화
+      clearView();
 
-      // characters/situations는 null일 수 없고, 최소 1개는 있어야 함
-      if (!characters || !situations || characters.length === 0 || situations.length === 0) {
-        // do nothing
-      } else if (!detailParam) {
+      // 필수 확인
+      if (!st.t || !st.c || !st.s) return;
+
+      const characters = expandCodesFromParam(st.c);
+      const clothes = expandCodesFromParam(st.l ?? "") ?? [""];
+      const situations = expandCodesFromParam(st.s);
+
+      if (!characters || characters.length === 0 || !situations || situations.length === 0) return;
+
+      // 디테일 파라미터 없으면: 조합 목록(미리보기)
+      if (!st.d) {
+        const previewSituation = situations[0] ?? "";
+
         characters.forEach((char, ci) => {
           clothes.forEach((clo, cli) => {
-            // Preview: always first situation (빈칸이면 ""도 OK)
-            const previewSituation = situations[0] ?? '';
-            const imgUrl = templateParam
-              .replace('캐릭터', char ?? '')
-              .replace('의상', clo ?? '')
-              .replace('상황', previewSituation ?? '');
-
+            const imgUrl = buildUrlFromParts(st.t, char, clo, previewSituation);
             const comboId = `${ci}-${cli}`;
 
-            const col = document.createElement('div');
-            col.className = 'col-md-4 mb-4';
-            col.innerHTML = `
-              <img src="${imgUrl}" alt="${(char ?? '')}-${(clo ?? '')}" class="gallery-img gallery-btn" onclick="redirectWithParams({
-                t: '${templateParam}',
-                c: '${characterParam}',
-                l: '${clothParam}',
-                s: '${situationParam}',
-                d: '${comboId}',
-              })">
-            `;
+            const col = document.createElement("div");
+            col.className = "col-md-4 mb-4";
+
+            const img = document.createElement("img");
+            img.className = "gallery-img gallery-btn";
+            img.alt = `${char}-${clo}`;
+            img.src = imgUrl;
+
+            // 깨진 타일 보이기 싫으면 여기에도 error 처리
+            img.addEventListener("error", () => {
+              // 조합 썸네일이 깨져도 조합 진입은 필요할 수 있어서
+              // 타일 삭제 대신, 실패 목록에만 넣고 숨김 처리
+              col.remove();
+              addFailed(imgUrl);
+            });
+
+            img.addEventListener("click", () => {
+              const next = { ...st, d: comboId };
+              renderFromState(next, { writeUrl: true, replaceUrl: false });
+              window.scrollTo({ top: 0, behavior: "instant" });
+            });
+
+            col.appendChild(img);
             container.appendChild(col);
           });
         });
-      } else {
-        const failedItemsPanel = document.getElementById('failed-items-panel');
-        const failedItemsList = document.getElementById('failed-items');
 
-        const validSituations = new Set();
-
-        function buildMatchImageUrl(situation) {
-          const match = detailParam.match(/(\d+)-(\d+)/);
-          if (!match) return null;
-
-          const charIndex = parseInt(match[1]);
-          const clothIndex = parseInt(match[2]);
-
-          return templateParam
-            .replace('캐릭터', characters[charIndex] ?? '')
-            .replace('의상', clothes[clothIndex] ?? '')
-            .replace('상황', situation ?? '');
-        }
-
-        function refreshFailedItems() {
-          const invalidSituations = situations.filter(sit => !validSituations.has(sit));
-          failedItemsList.innerHTML = '';
-
-          invalidSituations.forEach(sit => {
-            const li = document.createElement('li');
-            li.textContent = buildMatchImageUrl(sit);
-            failedItemsList.appendChild(li);
-          });
-
-          failedItemsPanel.style.display = invalidSituations.length > 0 ? 'block' : 'none';
-        }
-
-        situations.forEach(async (sit, si) => {
-          const imgUrl = buildMatchImageUrl(sit);
-          if (!imgUrl) return;
-
-          const card = document.createElement('div');
-          card.className = 'col-md-4 mb-4';
-          card.style.display = 'none';
-
-          const img = document.createElement('img');
-
-          img.addEventListener('load', function () {
-            if (card.isConnected) {
-              card.style.display = 'block';
-              validSituations.add(sit);
-              refreshFailedItems();
-            }
-          });
-
-          img.addEventListener('error', function () {
-            card.remove();
-            validSituations.delete(sit);
-            refreshFailedItems();
-          });
-
-          img.addEventListener('click', function () {
-            showImageModal(si);
-          });
-
-          img.src = imgUrl;
-          img.alt = (sit === '' ? '(blank)' : sit);
-          img.className = 'gallery-img gallery-btn';
-
-          card.appendChild(img);
-          container.appendChild(card);
-
-          if (!await checkImageExists(imgUrl)) {
-            card.remove();
-            validSituations.delete(sit);
-            refreshFailedItems();
-          }
-        });
-
-        // Image modal
-        const copyButton = document.getElementById('copyUrl');
-        const copyTooltip = new bootstrap.Tooltip(copyButton, { title: '복사됨!', trigger: 'manual' });
-
-        const prevButton = document.getElementById('prevImage');
-        const nextButton = document.getElementById('nextImage');
-
-        let modalIndex = 0;
-
-        function getPrevValidIndex(currentIndex) {
-          for (let i = currentIndex - 1; i >= 0; --i) {
-            if (validSituations.has(situations[i])) return i;
-          }
-          return -1;
-        }
-
-        function getNextValidIndex(currentIndex) {
-          for (let i = currentIndex + 1; i < situations.length; ++i) {
-            if (validSituations.has(situations[i])) return i;
-          }
-          return -1;
-        }
-
-        function updateImageModal(situationIndex) {
-          if (situationIndex < 0) return;
-
-          const imageUrl = buildMatchImageUrl(situations[situationIndex]);
-          if (!imageUrl) return;
-
-          modalIndex = situationIndex;
-          prevButton.style.visibility = getPrevValidIndex(modalIndex) < 0 ? 'hidden' : 'visible';
-          nextButton.style.visibility = getNextValidIndex(modalIndex) < 0 ? 'hidden' : 'visible';
-
-          document.getElementById('modalTitle').innerHTML = imageUrl;
-          document.getElementById('modalImage').src = imageUrl;
-        }
-
-        function showImageModal(situationIndex) {
-          if (!validSituations.has(situations[situationIndex])) return;
-
-          updateImageModal(situationIndex);
-          const modal = new bootstrap.Modal(document.getElementById('imageModal'));
-          modal.show();
-        }
-
-        copyButton.addEventListener('click', function () {
-          const titleText = document.getElementById('modalTitle').innerText;
-          navigator.clipboard.writeText(titleText).then(() => {
-            copyTooltip.show();
-            setTimeout(() => copyTooltip.hide(), 1000);
-          });
-        });
-
-        prevButton.addEventListener('click', function () {
-          updateImageModal(getPrevValidIndex(modalIndex));
-        });
-
-        nextButton.addEventListener('click', function () {
-          updateImageModal(getNextValidIndex(modalIndex));
-        });
+        return;
       }
+
+      // 디테일 모드
+      const match = st.d.match(/(\d+)-(\d+)/);
+      if (!match) return;
+
+      const charIndex = parseInt(match[1], 10);
+      const clothIndex = parseInt(match[2], 10);
+
+      const validSituations = new Set();
+
+      function buildMatchImageUrl(sit) {
+        return buildUrlFromParts(st.t, characters[charIndex], clothes[clothIndex], sit);
+      }
+
+      function createImageCard(imgUrl, sit, si) {
+        const card = document.createElement("div");
+        card.className = "col-md-4 mb-4";
+        card.style.display = "none";
+
+        const img = document.createElement("img");
+        img.className = "gallery-img gallery-btn";
+        img.alt = (sit === "" ? "(blank)" : sit);
+
+        img.addEventListener("load", () => {
+          if (!card.isConnected) return;
+          card.style.display = "block";
+          validSituations.add(sit);
+        });
+
+        img.addEventListener("error", () => {
+          card.remove();
+          validSituations.delete(sit);
+          addFailed(imgUrl);
+        });
+
+        img.addEventListener("click", () => showImageModal(si));
+
+        img.src = imgUrl;
+        card.appendChild(img);
+        container.appendChild(card);
+      }
+
+      // 먼저 HEAD로 확인 가능한 건 걸러서 404 요청 자체를 줄임
+      await asyncPool(12, situations.map((sit, si) => ({ sit, si })), async ({ sit, si }) => {
+        const imgUrl = buildMatchImageUrl(sit);
+        const ok = await probeImage(imgUrl);
+
+        if (ok === false) {
+          addFailed(imgUrl);
+          return;
+        }
+        createImageCard(imgUrl, sit, si);
+      });
+
+      // ===== Modal logic =====
+      const copyButton = document.getElementById("copyUrl");
+      const copyTooltip = new bootstrap.Tooltip(copyButton, { title: "복사됨!", trigger: "manual" });
+
+      const prevButton = document.getElementById("prevImage");
+      const nextButton = document.getElementById("nextImage");
+
+      let modalIndex = 0;
+
+      function getPrevValidIndex(currentIndex) {
+        for (let i = currentIndex - 1; i >= 0; --i) {
+          if (validSituations.has(situations[i])) return i;
+        }
+        return -1;
+      }
+
+      function getNextValidIndex(currentIndex) {
+        for (let i = currentIndex + 1; i < situations.length; ++i) {
+          if (validSituations.has(situations[i])) return i;
+        }
+        return -1;
+      }
+
+      function updateImageModal(situationIndex) {
+        if (situationIndex < 0) return;
+
+        const imageUrl = buildMatchImageUrl(situations[situationIndex]);
+        if (!imageUrl) return;
+
+        modalIndex = situationIndex;
+        prevButton.style.visibility = getPrevValidIndex(modalIndex) < 0 ? "hidden" : "visible";
+        nextButton.style.visibility = getNextValidIndex(modalIndex) < 0 ? "hidden" : "visible";
+
+        document.getElementById("modalTitle").innerHTML = imageUrl;
+        document.getElementById("modalImage").src = imageUrl;
+      }
+
+      function showImageModal(situationIndex) {
+        if (!validSituations.has(situations[situationIndex])) return;
+
+        updateImageModal(situationIndex);
+        const modal = new bootstrap.Modal(document.getElementById("imageModal"));
+        modal.show();
+      }
+
+      // 이벤트 중복 방지: 한 번만 바인딩
+      copyButton.onclick = () => {
+        const titleText = document.getElementById("modalTitle").innerText;
+        navigator.clipboard.writeText(titleText).then(() => {
+          copyTooltip.show();
+          setTimeout(() => copyTooltip.hide(), 1000);
+        });
+      };
+
+      prevButton.onclick = () => updateImageModal(getPrevValidIndex(modalIndex));
+      nextButton.onclick = () => updateImageModal(getNextValidIndex(modalIndex));
+
+      // 전역에서 접근 가능하도록
+      window.showImageModal = showImageModal;
     }
+
+    // =========================
+    // UI events
+    // =========================
+    document.getElementById("generate-btn").addEventListener("click", () => {
+      const st = getStateFromForm("");
+      renderFromState(st, { writeUrl: true, replaceUrl: false });
+      window.scrollTo({ top: 0, behavior: "instant" });
+    });
+
+    document.getElementById("copyPageLinkBtn").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        toast("현재 링크 복사됨");
+      } catch {
+        // fallback
+        prompt("복사 실패. 아래 링크를 직접 복사해줘.", window.location.href);
+      }
+    });
+
+    document.getElementById("resetBtn").addEventListener("click", () => {
+      const st = normalizeState({ t:"", c:"", l:"", s:"", d:"" });
+      renderFromState(st, { writeUrl: true, replaceUrl: true });
+    });
+
+    // 뒤로가기/앞으로가기 대응
+    window.addEventListener("popstate", () => {
+      const st = readStateFromUrl();
+      renderFromState(st, { writeUrl: false });
+    });
+
+    // =========================
+    // Boot
+    // =========================
+    (function boot() {
+      const st = setDefaultIfEmpty(readStateFromUrl());
+      renderFromState(st, { writeUrl: true, replaceUrl: true });
+    })();
   </script>
 </body>
 </html>
