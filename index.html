@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <title>캐릭터챗 외부이미지 미리보기</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Bootstrap -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+
+  <!-- Korean font -->
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet" />
+
+  <style>
+    body { padding: 20px; font-family: 'Noto Sans KR', sans-serif; }
+    .gallery-img { object-fit: contain; height: 100%; width: 100%; border-radius: 0.5rem; transition: transform 0.2s ease, box-shadow 0.2s ease; }
+    .gallery-btn { cursor: pointer; }
+    .gallery-btn:hover { transform: scale(1.03); box-shadow: 0 8px 20px rgba(0,0,0,0.15); }
+    .title-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; padding-bottom: 1rem; }
+    .modal-body { user-select: none; }
+    .small-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .failed-textarea { font-size: 12px; line-height: 1.25; }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+
+    <div class="title-bar">
+      <h1 class="h4 m-0">캐릭터챗 외부이미지 미리보기</h1>
+    </div>
+
+    <!-- Input form -->
+    <div id="input-form" class="mb-4">
+      <div class="row g-2">
+        <div class="col-md">
+          <label for="character" class="form-label">
+            캐릭터 코드 (쉼표로 구분, 범위: a1..a4 / a..f 가능)
+          </label>
+          <input id="character" class="form-control" placeholder="">
+        </div>
+        <div class="col-md">
+          <label for="cloth" class="form-label">
+            의상 코드 (쉼표로 구분, 범위: 01..12 / a1..a4 / a..f 가능, 빈칸도 가능)
+          </label>
+          <input id="cloth" class="form-control" placeholder="">
+        </div>
+        <div class="col-md">
+          <label for="situation" class="form-label">
+            상황 코드 (쉼표로 구분, 범위: 1..20 / 01..84 가능, 빈칸도 가능)
+          </label>
+          <input id="situation" class="form-control" placeholder="">
+        </div>
+      </div>
+
+      <div class="row g-2 mt-2">
+        <div class="col-md">
+          <label for="template" class="form-label">템플릿 URL (키워드: 캐릭터, 의상, 상황)</label>
+          <input id="template" class="form-control" placeholder="">
+        </div>
+        <div class="col-md-auto d-flex align-items-end">
+          <button class="btn btn-primary" id="generate-btn">목록생성</button>
+        </div>
+      </div>
+
+      <!-- Preset UI -->
+      <div class="row g-2 mt-3 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label">저장된 템플릿</label>
+          <select id="presetSelect" class="form-select"></select>
+        </div>
+
+        <div class="col-md-3">
+          <label for="presetName" class="form-label">프리셋 이름</label>
+          <input id="presetName" class="form-control" placeholder="예: 기본, a세트">
+        </div>
+
+        <div class="col-md-auto d-flex gap-2">
+          <button class="btn btn-outline-light" id="savePresetBtn">저장</button>
+          <button class="btn btn-outline-secondary" id="deletePresetBtn">삭제</button>
+        </div>
+
+        <div class="col-md-auto d-flex gap-2 ms-auto">
+          <button class="btn btn-outline-info" id="exportPresetsBtn">내보내기</button>
+
+          <label class="btn btn-outline-info mb-0">
+            가져오기 <input type="file" id="importPresetsFile" accept="application/json" hidden>
+          </label>
+
+          <button class="btn btn-outline-warning" id="copyPresetsBtn">JSON 복사</button>
+          <button class="btn btn-outline-warning" id="pastePresetsBtn">JSON 붙여넣기</button>
+        </div>
+      </div>
+
+      <div class="form-text mt-2 text-muted">
+        범위 입력 예) a1..a4, 01..12, a..f. 빈칸도 코드로 인식됨(예: 상황에 빈칸을 넣으면 "상황" 치환이 공백).
+      </div>
+    </div>
+
+    <!-- Gallery container -->
+    <div class="row" id="gallery-container"></div>
+
+    <!-- ✅ 하단: 출력되지 않은 이미지 목록(접기/펼치기) -->
+    <div id="failed-items-panel" class="card border-secondary text-muted rounded mt-3" style="display:none;">
+      <div class="card-header p-2">
+        <h6 class="mb-0">
+          <a class="text-muted text-decoration-none d-flex align-items-center"
+             data-bs-toggle="collapse"
+             href="#failed-items-collapse"
+             role="button"
+             aria-expanded="false"
+             aria-controls="failed-items-collapse">
+            출력되지 않은 이미지 목록
+            <span class="ms-auto small">(접기/펼치기)</span>
+          </a>
+        </h6>
+      </div>
+      <div id="failed-items-collapse" class="collapse show">
+        <div class="card-body p-2">
+          <textarea id="failed-items-text"
+                    class="form-control failed-textarea"
+                    rows="10"
+                    readonly
+                    spellcheck="false"></textarea>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Image Modal -->
+  <div class="modal fade" id="imageModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-content">
+        <div class="modal-header border-0 pt-2 pb-0">
+          <h6 class="modal-title small-mono" id="modalTitle">Image</h6>
+
+          <button type="button"
+                  class="btn p-1 m-1 d-flex align-items-center justify-content-center"
+                  data-bs-toggle="tooltip" data-bs-placement="bottom"
+                  id="copyUrl" title="복사">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-copy" viewBox="0 0 16 16">
+              <path fill-rule="evenodd" d="M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1z"/>
+            </svg>
+          </button>
+
+          <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal"></button>
+        </div>
+
+        <div class="modal-body d-flex justify-content-center align-items-center position-relative">
+          <button class="btn btn-dark position-absolute start-0 translate-middle-y d-flex p-2 align-items-center justify-content-center"
+                  style="top:50%; margin-left:-10px;"
+                  id="prevImage">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-left" viewBox="0 0 16 16">
+              <path fill-rule="evenodd" d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0"/>
+            </svg>
+          </button>
+
+          <img id="modalImage" src="" alt="Full View" class="img-fluid rounded">
+
+          <button class="btn btn-dark position-absolute end-0 translate-middle-y d-flex p-2 align-items-center justify-content-center"
+                  style="top:50%; margin-right:-10px;"
+                  id="nextImage">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-right" viewBox="0 0 16 16">
+              <path fill-rule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="py-3 mt-auto">
+    <hr />
+    <div class="container text-center text-muted">
+      <small>
+        사이트 개발: 시란 (새벽제작) | <a href="https://arca.live/b/dawncraft/149404969" target="_blank" rel="noreferrer">이용 가이드</a>
+      </small>
+    </div>
+  </footer>
+
+  <script>
+    // =========================
+    // Query / Navigation helpers
+    // =========================
+    function getQueryParam(name) {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get(name)?.replaceAll(',', '~');
+    }
+
+    function redirectWithParams(params) {
+      const url = new URL(window.location.href);
+      url.search = new URLSearchParams(params).toString();
+      window.location.href = url.toString();
+    }
+
+    function setFormValues(template, character, cloth, situation) {
+      if (template == null && character == null && situation == null && cloth == null) {
+        template = 'https://si-ran.com/gg/캐릭터-의상-상황.webp';
+        character = 'a,b,c,d,e,f,i';
+        cloth = '1,2';
+        situation = '1,3..11';
+      } else {
+        character = character?.replaceAll('~', ',');
+        cloth = cloth?.replaceAll('~', ',');
+        situation = situation?.replaceAll('~', ',');
+      }
+
+      document.getElementById('template').value = template ?? '';
+      document.getElementById('character').value = character ?? '';
+      document.getElementById('cloth').value = cloth ?? '';
+      document.getElementById('situation').value = situation ?? '';
+    }
+
+    // =========================
+    // ✅ (가능하면) 404 요청 자체를 줄이는 존재 확인
+    // - HEAD가 CORS로 막히면 null(확인불가) 반환
+    // =========================
+    async function probeImage(url) {
+      try {
+        const resp = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+        return resp.ok; // true면 존재, false면 404/403 등
+      } catch (e) {
+        return null; // CORS/네트워크로 확인 불가
+      }
+    }
+
+    // =========================
+    // ✅ Range expansion for ALL codes (캐릭터/의상/상황)
+    // =========================
+    function expandRangeToken(token) {
+      if (token === '') return ['']; // 빈칸도 유효 코드
+
+      if (!token.includes('..')) return [token];
+
+      const parts = token.split('..');
+      if (parts.length !== 2) return [token];
+
+      const leftRaw = parts[0].trim();
+      const rightRaw = parts[1].trim();
+      if (leftRaw === '' || rightRaw === '') return [token];
+
+      if (/^\d+$/.test(leftRaw) && /^\d+$/.test(rightRaw)) {
+        const len = leftRaw.length;
+        const start = Number(leftRaw);
+        const end = Number(rightRaw);
+        if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) return [token];
+        const out = [];
+        for (let i = start; i <= end; i++) out.push(String(i).padStart(len, '0'));
+        return out;
+      }
+
+      if (/^[A-Za-z]$/.test(leftRaw) && /^[A-Za-z]$/.test(rightRaw)) {
+        const a = leftRaw.charCodeAt(0);
+        const b = rightRaw.charCodeAt(0);
+        if (a > b) return [token];
+        const out = [];
+        for (let c = a; c <= b; c++) out.push(String.fromCharCode(c));
+        return out;
+      }
+
+      const m1 = leftRaw.match(/^(.+?)(\d+)$/);
+      const m2 = rightRaw.match(/^(.+?)(\d+)$/);
+      if (m1 && m2) {
+        const p1 = m1[1], n1 = m1[2];
+        const p2 = m2[1], n2 = m2[2];
+        if (p1 !== p2) return [token];
+
+        const len = n1.length;
+        const start = Number(n1);
+        const end = Number(n2);
+        if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) return [token];
+
+        const out = [];
+        for (let i = start; i <= end; i++) out.push(p1 + String(i).padStart(len, '0'));
+        return out;
+      }
+
+      return [token];
+    }
+
+    function expandCodesFromParam(paramWithTilde) {
+      if (paramWithTilde == null) return null;
+      const rawTokens = paramWithTilde.split('~').map(s => s.trim()); // "a~~b" => ["a","","b"]
+      const expanded = [];
+      for (const t of rawTokens) {
+        const chunks = expandRangeToken(t);
+        for (const c of chunks) expanded.push(c);
+      }
+      return expanded;
+    }
+
+    // =========================
+    // ✅ Presets (템플릿 저장/내보내기/가져오기)
+    // =========================
+    const PRESET_KEY = "image_viewer_presets_v1";
+
+    function loadPresetStore() {
+      try {
+        const raw = localStorage.getItem(PRESET_KEY);
+        if (!raw) return { version: 1, presets: [] };
+        const data = JSON.parse(raw);
+        if (!data || !Array.isArray(data.presets)) return { version: 1, presets: [] };
+        return data;
+      } catch {
+        return { version: 1, presets: [] };
+      }
+    }
+
+    function savePresetStore(data) {
+      localStorage.setItem(PRESET_KEY, JSON.stringify(data));
+    }
+
+    function normalizePreset(p) {
+      return {
+        name: (p?.name ?? '').toString(),
+        template: (p?.template ?? '').toString(),
+        character: (p?.character ?? '').toString(),
+        cloth: (p?.cloth ?? '').toString(),
+        situation: (p?.situation ?? '').toString(),
+        savedAt: p?.savedAt ?? new Date().toISOString(),
+      };
+    }
+
+    function getFormAsPreset(nameOverride) {
+      const name = (nameOverride ?? document.getElementById("presetName").value).trim();
+      return normalizePreset({
+        name,
+        template: document.getElementById("template").value.trim(),
+        character: document.getElementById("character").value.trim(),
+        cloth: document.getElementById("cloth").value.trim(),
+        situation: document.getElementById("situation").value.trim(),
+        savedAt: new Date().toISOString(),
+      });
+    }
+
+    function applyPresetToForm(preset) {
+      const p = normalizePreset(preset);
+      document.getElementById("template").value = p.template;
+      document.getElementById("character").value = p.character;
+      document.getElementById("cloth").value = p.cloth;
+      document.getElementById("situation").value = p.situation;
+      document.getElementById("presetName").value = p.name;
+    }
+
+    function findPresetIndexByName(store, name) {
+      return store.presets.findIndex(p => (p.name || "") === name);
+    }
+
+    function exportPresetsAsFile() {
+      const store = loadPresetStore();
+      const json = JSON.stringify(store, null, 2);
+      const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "image_viewer_presets.json";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      URL.revokeObjectURL(url);
+    }
+
+    async function copyPresetsToClipboard() {
+      const store = loadPresetStore();
+      const json = JSON.stringify(store, null, 2);
+      await navigator.clipboard.writeText(json);
+      toast("프리셋 JSON 복사됨");
+    }
+
+    async function pastePresetsFromClipboard() {
+      const text = await navigator.clipboard.readText();
+      if (!text?.trim()) {
+        toast("클립보드가 비었음");
+        return;
+      }
+      importPresetsFromText(text);
+    }
+
+    function importPresetsFromText(text) {
+      let data;
+      try { data = JSON.parse(text); }
+      catch { alert("JSON 파싱 실패"); return; }
+
+      if (!data || !Array.isArray(data.presets)) {
+        alert("형식 오류: { presets: [...] } 형태가 아님");
+        return;
+      }
+
+      const store = loadPresetStore();
+      const incoming = data.presets.map(normalizePreset);
+
+      for (const p of incoming) {
+        if (!p.name) continue;
+        const idx = findPresetIndexByName(store, p.name);
+        if (idx >= 0) store.presets[idx] = p;
+        else store.presets.push(p);
+      }
+
+      savePresetStore(store);
+      refreshPresetSelect(true);
+      toast("가져오기 완료");
+    }
+
+    function importPresetsFromFile(file) {
+      const reader = new FileReader();
+      reader.onload = () => importPresetsFromText(reader.result);
+      reader.readAsText(file, "utf-8");
+    }
+
+    function toast(message) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "toast align-items-center text-bg-dark border-0 position-fixed bottom-0 end-0 m-3";
+      wrapper.setAttribute("role", "alert");
+      wrapper.setAttribute("aria-live", "assertive");
+      wrapper.setAttribute("aria-atomic", "true");
+      wrapper.innerHTML = `
+        <div class="d-flex">
+          <div class="toast-body">${message}</div>
+          <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+      `;
+      document.body.appendChild(wrapper);
+      const t = new bootstrap.Toast(wrapper, { delay: 1500 });
+      t.show();
+      wrapper.addEventListener("hidden.bs.toast", () => wrapper.remove());
+    }
+
+    function refreshPresetSelect(keepName) {
+      const select = document.getElementById("presetSelect");
+      if (!select) return;
+
+      const store = loadPresetStore();
+      const currentValue = select.value;
+      const currentName = keepName ? document.getElementById("presetName").value : "";
+
+      select.innerHTML = "";
+      const opt0 = document.createElement("option");
+      opt0.value = "";
+      opt0.textContent = "선택...";
+      select.appendChild(opt0);
+
+      const sorted = store.presets.slice().sort((a, b) => (b.savedAt || "").localeCompare(a.savedAt || ""));
+      sorted.forEach((p, i) => {
+        const opt = document.createElement("option");
+        opt.value = String(i);
+        opt.textContent = p.name ? p.name : "(이름없음)";
+        select.appendChild(opt);
+      });
+
+      if (currentValue && Number(currentValue) < sorted.length) select.value = currentValue;
+      else select.value = "";
+
+      if (keepName) document.getElementById("presetName").value = currentName;
+    }
+
+    function initPresetUI() {
+      refreshPresetSelect(true);
+
+      document.getElementById("presetSelect")?.addEventListener("change", (e) => {
+        const store = loadPresetStore();
+        const idx = Number(e.target.value);
+        if (!e.target.value || Number.isNaN(idx)) return;
+
+        const sorted = store.presets.slice().sort((a, b) => (b.savedAt || "").localeCompare(a.savedAt || ""));
+        const preset = sorted[idx];
+        if (!preset) return;
+
+        applyPresetToForm(preset);
+        toast("프리셋 적용됨");
+      });
+
+      document.getElementById("savePresetBtn")?.addEventListener("click", () => {
+        const name = document.getElementById("presetName").value.trim();
+        if (!name) { alert("프리셋 이름을 입력해줘"); return; }
+
+        const store = loadPresetStore();
+        const p = getFormAsPreset(name);
+
+        const idx = findPresetIndexByName(store, name);
+        if (idx >= 0) store.presets[idx] = p;
+        else store.presets.push(p);
+
+        savePresetStore(store);
+        refreshPresetSelect(true);
+        toast("저장 완료");
+      });
+
+      document.getElementById("deletePresetBtn")?.addEventListener("click", () => {
+        const name = document.getElementById("presetName").value.trim();
+        if (!name) { alert("삭제할 프리셋 이름을 입력해줘"); return; }
+
+        const store = loadPresetStore();
+        const idx = findPresetIndexByName(store, name);
+        if (idx < 0) { alert("해당 이름의 프리셋이 없음"); return; }
+
+        store.presets.splice(idx, 1);
+        savePresetStore(store);
+        refreshPresetSelect(true);
+        toast("삭제 완료");
+      });
+
+      document.getElementById("exportPresetsBtn")?.addEventListener("click", exportPresetsAsFile);
+
+      document.getElementById("importPresetsFile")?.addEventListener("change", (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        importPresetsFromFile(file);
+        e.target.value = "";
+      });
+
+      document.getElementById("copyPresetsBtn")?.addEventListener("click", async () => {
+        try { await copyPresetsToClipboard(); }
+        catch { alert("클립보드 복사 실패(HTTPS/권한 필요할 수 있음)"); }
+      });
+
+      document.getElementById("pastePresetsBtn")?.addEventListener("click", async () => {
+        try { await pastePresetsFromClipboard(); }
+        catch {
+          const txt = prompt("붙여넣을 프리셋 JSON을 넣어줘");
+          if (txt) importPresetsFromText(txt);
+        }
+      });
+    }
+
+    // =========================
+    // Form submission (querystring)
+    // =========================
+    document.getElementById('generate-btn')?.addEventListener('click', () => {
+      const template = document.getElementById('template').value.trim();
+      const character = document.getElementById('character').value.replaceAll(',', '~');
+      const cloth = document.getElementById('cloth').value.replaceAll(',', '~');
+      const situation = document.getElementById('situation').value.replaceAll(',', '~');
+
+      redirectWithParams({ t: template, c: character, l: cloth, s: situation });
+    });
+
+    // =========================
+    // Failed list UI helpers
+    // =========================
+    const failedPanel = document.getElementById('failed-items-panel');
+    const failedText = document.getElementById('failed-items-text');
+
+    const failedUrls = new Set();
+    function addFailed(url) {
+      if (!url) return;
+      failedUrls.add(url);
+      renderFailed();
+    }
+    function renderFailed() {
+      const arr = Array.from(failedUrls);
+      if (arr.length === 0) {
+        failedPanel.style.display = 'none';
+        failedText.value = '';
+        return;
+      }
+      failedPanel.style.display = 'block';
+      failedText.value = arr.join('\n');
+    }
+
+    // =========================
+    // Gallery generation
+    // =========================
+    const templateParam = getQueryParam('t') ?? getQueryParam('template');
+    const characterParam = getQueryParam('c') ?? getQueryParam('character');
+    const clothParam = getQueryParam('l') ?? getQueryParam('cloth');
+    const situationParam = getQueryParam('s') ?? getQueryParam('situation');
+    const detailParam = getQueryParam('d') ?? getQueryParam('detail');
+    const container = document.getElementById('gallery-container');
+
+    setFormValues(templateParam, characterParam, clothParam, situationParam);
+    initPresetUI();
+
+    const hasRequired =
+      templateParam != null &&
+      characterParam != null &&
+      situationParam != null &&
+      clothParam != null;
+
+    if (hasRequired && templateParam !== '' && characterParam !== '' && situationParam !== '') {
+      const characters = expandCodesFromParam(characterParam);
+      const clothes = expandCodesFromParam(clothParam) ?? [''];
+      const situations = expandCodesFromParam(situationParam);
+
+      if (!characters || !situations || characters.length === 0 || situations.length === 0) {
+        // do nothing
+      } else if (!detailParam) {
+        // Preview mode: 조합 썸네일(첫 상황만)
+        characters.forEach((char, ci) => {
+          clothes.forEach((clo, cli) => {
+            const previewSituation = situations[0] ?? '';
+            const imgUrl = templateParam
+              .replace('캐릭터', char ?? '')
+              .replace('의상', clo ?? '')
+              .replace('상황', previewSituation ?? '');
+
+            const comboId = `${ci}-${cli}`;
+
+            const col = document.createElement('div');
+            col.className = 'col-md-4 mb-4';
+
+            // ✅ 미리보기는 404가 나더라도 “조합 선택용”이라 그냥 표시(깨짐 줄이고 싶으면 여기에도 probe 적용 가능)
+            col.innerHTML = `
+              <img src="${imgUrl}" alt="${(char ?? '')}-${(clo ?? '')}" class="gallery-img gallery-btn" onclick="redirectWithParams({
+                t: '${templateParam}',
+                c: '${characterParam}',
+                l: '${clothParam}',
+                s: '${situationParam}',
+                d: '${comboId}',
+              })">
+            `;
+            container.appendChild(col);
+          });
+        });
+
+      } else {
+        // Detail mode: 선택된 (캐릭터, 의상) 조합의 모든 상황 출력
+        const validSituations = new Set();
+
+        function buildMatchImageUrl(situation) {
+          const match = detailParam.match(/(\d+)-(\d+)/);
+          if (!match) return null;
+
+          const charIndex = parseInt(match[1]);
+          const clothIndex = parseInt(match[2]);
+
+          return templateParam
+            .replace('캐릭터', characters[charIndex] ?? '')
+            .replace('의상', clothes[clothIndex] ?? '')
+            .replace('상황', situation ?? '');
+        }
+
+        // ✅ 동시 요청 제한(너무 많이 때리면 브라우저가 버벅임)
+        async function asyncPool(limit, array, iteratorFn) {
+          const ret = [];
+          const executing = [];
+          for (const item of array) {
+            const p = Promise.resolve().then(() => iteratorFn(item));
+            ret.push(p);
+
+            if (limit <= array.length) {
+              const e = p.then(() => executing.splice(executing.indexOf(e), 1));
+              executing.push(e);
+              if (executing.length >= limit) {
+                await Promise.race(executing);
+              }
+            }
+          }
+          return Promise.all(ret);
+        }
+
+        function createImageCard(imgUrl, sit, si) {
+          const card = document.createElement('div');
+          card.className = 'col-md-4 mb-4';
+          card.style.display = 'none';
+
+          const img = document.createElement('img');
+          img.className = 'gallery-img gallery-btn';
+          img.alt = (sit === '' ? '(blank)' : sit);
+
+          img.addEventListener('load', () => {
+            if (!card.isConnected) return;
+            card.style.display = 'block';
+            validSituations.add(sit);
+          });
+
+          img.addEventListener('error', () => {
+            // ✅ 깨진 타일이 보이기 전에 제거 + 실패목록에 추가
+            card.remove();
+            validSituations.delete(sit);
+            addFailed(imgUrl);
+          });
+
+          img.addEventListener('click', () => {
+            showImageModal(si);
+          });
+
+          img.src = imgUrl;
+          card.appendChild(img);
+          container.appendChild(card);
+        }
+
+        // ✅ 핵심: 먼저 HEAD로 존재 확인 가능한 건 확인해서, 없는 건 아예 <img src>를 안 건다
+        await asyncPool(12, situations.map((sit, si) => ({ sit, si })), async ({ sit, si }) => {
+          const imgUrl = buildMatchImageUrl(sit);
+          if (!imgUrl) return;
+
+          const ok = await probeImage(imgUrl);
+
+          if (ok === false) {
+            // 확실히 없음 -> 요청 자체를 하지 않음 => 404 거의 제거
+            addFailed(imgUrl);
+            return;
+          }
+
+          // ok === true (존재) 또는 ok === null (CORS로 확인불가 -> 시도)
+          createImageCard(imgUrl, sit, si);
+        });
+
+        // Image modal
+        const copyButton = document.getElementById('copyUrl');
+        const copyTooltip = new bootstrap.Tooltip(copyButton, { title: '복사됨!', trigger: 'manual' });
+
+        const prevButton = document.getElementById('prevImage');
+        const nextButton = document.getElementById('nextImage');
+
+        let modalIndex = 0;
+
+        function getPrevValidIndex(currentIndex) {
+          for (let i = currentIndex - 1; i >= 0; --i) {
+            if (validSituations.has(situations[i])) return i;
+          }
+          return -1;
+        }
+
+        function getNextValidIndex(currentIndex) {
+          for (let i = currentIndex + 1; i < situations.length; ++i) {
+            if (validSituations.has(situations[i])) return i;
+          }
+          return -1;
+        }
+
+        function updateImageModal(situationIndex) {
+          if (situationIndex < 0) return;
+
+          const imageUrl = buildMatchImageUrl(situations[situationIndex]);
+          if (!imageUrl) return;
+
+          modalIndex = situationIndex;
+          prevButton.style.visibility = getPrevValidIndex(modalIndex) < 0 ? 'hidden' : 'visible';
+          nextButton.style.visibility = getNextValidIndex(modalIndex) < 0 ? 'hidden' : 'visible';
+
+          document.getElementById('modalTitle').innerHTML = imageUrl;
+          document.getElementById('modalImage').src = imageUrl;
+        }
+
+        function showImageModal(situationIndex) {
+          if (!validSituations.has(situations[situationIndex])) return;
+
+          updateImageModal(situationIndex);
+          const modal = new bootstrap.Modal(document.getElementById('imageModal'));
+          modal.show();
+        }
+
+        copyButton.addEventListener('click', function () {
+          const titleText = document.getElementById('modalTitle').innerText;
+          navigator.clipboard.writeText(titleText).then(() => {
+            copyTooltip.show();
+            setTimeout(() => copyTooltip.hide(), 1000);
+          });
+        });
+
+        prevButton.addEventListener('click', function () {
+          updateImageModal(getPrevValidIndex(modalIndex));
+        });
+
+        nextButton.addEventListener('click', function () {
+          updateImageModal(getNextValidIndex(modalIndex));
+        });
+      }
+    }
+  </script>
+</body>
+</html>
