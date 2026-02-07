@@ -770,7 +770,7 @@
     }
 
     function ps1ScriptContent() {
-      return String.raw`param(
+  return String.raw`param(
   [string]$UrlListPath = ".\urls.txt",
   [string]$OutDir = ".\imgs"
 )
@@ -794,6 +794,11 @@ function GuessExt([string]$u){
   return "webp"
 }
 
+function SafeName([string]$name){
+  if([string]::IsNullOrWhiteSpace($name)){ return "" }
+  return ($name -replace '[\\/:*?"<>|]','_').Trim()
+}
+
 $i=0
 foreach($u in $urls){
   $i++
@@ -805,7 +810,7 @@ foreach($u in $urls){
       $name=("image_{0:0000}.{1}" -f $i,(GuessExt $u))
     }
 
-    $name = ($name -replace '[\\/:*?"<>|]','_').Trim()
+    $name = SafeName $name
     if([string]::IsNullOrWhiteSpace($name)){
       $name=("image_{0:0000}.{1}" -f $i,(GuessExt $u))
     }
@@ -813,8 +818,25 @@ foreach($u in $urls){
     Invoke-WebRequest -Uri $u -OutFile (Join-Path $OutDir $name) -UseBasicParsing -TimeoutSec 60
   } catch {}
 }
+
+# ----- 끝나고 자동 삭제 (urls + ps1) -----
+try {
+  $scriptPath = $MyInvocation.MyCommand.Path
+  $urlsPath = (Resolve-Path $UrlListPath).Path
+
+  $cmdPath = Join-Path $env:TEMP ("cleanup_{0}.cmd" -f ([Guid]::NewGuid().ToString("N")))
+  @"
+@echo off
+ping 127.0.0.1 -n 2 > nul
+del /f /q "$urlsPath" 2>nul
+del /f /q "$scriptPath" 2>nul
+del /f /q "%~f0" 2>nul
+"@ | Set-Content -Encoding ASCII -Path $cmdPath
+
+  Start-Process -WindowStyle Hidden -FilePath $cmdPath
+} catch {}
 `;
-    }
+}
 
     document.getElementById("exportPackBtn")?.addEventListener("click", () => {
       const urls = getVisibleGalleryUrls();
@@ -831,3 +853,4 @@ foreach($u in $urls){
   </script>
 </body>
 </html>
+
