@@ -12,9 +12,6 @@
   <!-- Korean font -->
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet" />
 
-  <!-- ✅ JSZip (ZIP으로 한 번에 저장) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-
   <style>
     body { padding: 20px; font-family: 'Noto Sans KR', sans-serif; }
     .gallery-img { object-fit: contain; height: 100%; width: 100%; border-radius: 0.5rem; transition: transform 0.2s ease, box-shadow 0.2s ease; }
@@ -23,6 +20,7 @@
     .title-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; padding-bottom: 1rem; }
     .modal-body { user-select: none; }
     .small-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    pre { margin: 0; }
   </style>
 </head>
 
@@ -32,13 +30,10 @@
     <div class="title-bar">
       <h1 class="h4 m-0">캐릭터챗 외부이미지 미리보기</h1>
 
-      <!-- ✅ 일괄 저장 버튼 -->
+      <!-- ✅ 버튼 1번: urls.txt + download.ps1 자동 다운로드 -->
       <div class="d-flex gap-2 ms-auto">
-        <button class="btn btn-outline-info btn-sm" id="downloadZipBtn" title="가능하면 ZIP 1개로 저장">
-          전체 저장 (ZIP)
-        </button>
-        <button class="btn btn-outline-warning btn-sm" id="downloadMultiBtn" title="브라우저가 여러 파일 다운로드 허용해야 함">
-          전체 저장 (여러 파일)
+        <button class="btn btn-outline-success btn-sm" id="exportPackBtn" title="urls.txt와 download.ps1을 자동으로 내려받습니다">
+          PowerShell 패키지 내보내기
         </button>
       </div>
     </div>
@@ -76,122 +71,23 @@
         </div>
       </div>
 
-      <!-- Preset UI -->
-      <div class="row g-2 mt-3 align-items-end">
-        <div class="col-md-3">
-          <label class="form-label">저장된 템플릿</label>
-          <select id="presetSelect" class="form-select"></select>
-        </div>
-
-        <div class="col-md-3">
-          <label for="presetName" class="form-label">프리셋 이름</label>
-          <input id="presetName" class="form-control" placeholder="예: 기본, a세트">
-        </div>
-
-        <div class="col-md-auto d-flex gap-2">
-          <button class="btn btn-outline-light" id="savePresetBtn">저장</button>
-          <button class="btn btn-outline-secondary" id="deletePresetBtn">삭제</button>
-        </div>
-
-        <div class="col-md-auto d-flex gap-2 ms-auto">
-          <button class="btn btn-outline-info" id="exportPresetsBtn">내보내기</button>
-
-          <label class="btn btn-outline-info mb-0">
-            가져오기 <input type="file" id="importPresetsFile" accept="application/json" hidden>
-          </label>
-
-          <button class="btn btn-outline-warning" id="copyPresetsBtn">JSON 복사</button>
-          <button class="btn btn-outline-warning" id="pastePresetsBtn">JSON 붙여넣기</button>
-        </div>
-      </div>
-
       <div class="form-text mt-2 text-muted">
         범위 입력 예) a1..a4, 01..12, a..f. 빈칸도 코드로 인식됨(예: 상황에 빈칸을 넣으면 "상황" 치환이 공백).
       </div>
 
-      <!-- ✅ 일괄 저장 안내 -->
       <div class="alert alert-secondary py-2 mt-3 mb-0 small">
-        <div class="mb-1">✅ <b>전체 저장(ZIP)</b>: 가능하면 파일 1개로 내려받습니다(서버가 CORS를 막으면 실패할 수 있음).</div>
-        <div>✅ <b>전체 저장(여러 파일)</b>: 브라우저가 “여러 파일 다운로드”를 허용해야 합니다(크롬이면 주소창 왼쪽 아이콘 → 사이트 설정에서 허용 가능).</div>
+        <div class="mb-1">✅ <b>PowerShell 패키지 내보내기</b> 버튼을 누르면 <code>urls_날짜.txt</code> + <code>download.ps1</code> 두 파일을 자동 다운로드.</div>
+        <div class="mb-2">✅ 두 파일이 같은 폴더(보통 다운로드 폴더)에 있으면, PowerShell에서 아래 <b>1줄</b>만 실행하면 끝.</div>
+        <div class="bg-dark text-light rounded p-2">
+          <code>powershell -ExecutionPolicy Bypass -File .\download.ps1 -UrlListPath .\urls_*.txt -OutDir .\imgs</code>
+        </div>
       </div>
     </div>
 
     <!-- Gallery container -->
     <div class="row" id="gallery-container"></div>
 
-    <div id="failed-items-panel" class="card border-secondary text-muted rounded" style="display:none;">
-      <div class="card-header p-2">
-        <h6 class="mb-0">
-          <a class="text-muted text-decoration-none d-flex align-items-center"
-             data-bs-toggle="collapse"
-             href="#failed-items-collapse"
-             role="button"
-             aria-expanded="false"
-             aria-controls="failed-items-collapse">
-            없는 이미지 목록
-            <span class="ms-auto small">(접기/펼치기)</span>
-          </a>
-        </h6>
-      </div>
-      <div id="failed-items-collapse" class="collapse">
-        <div class="card-body p-2">
-          <ul class="list-unstyled small mb-0" id="failed-items"></ul>
-        </div>
-      </div>
-    </div>
-
   </div>
-
-  <!-- Image Modal -->
-  <div class="modal fade" id="imageModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-xl">
-      <div class="modal-content">
-        <div class="modal-header border-0 pt-2 pb-0">
-          <h6 class="modal-title small-mono" id="modalTitle">Image</h6>
-
-          <button type="button"
-                  class="btn p-1 m-1 d-flex align-items-center justify-content-center"
-                  data-bs-toggle="tooltip" data-bs-placement="bottom"
-                  id="copyUrl" title="복사">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-copy" viewBox="0 0 16 16">
-              <path fill-rule="evenodd" d="M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1z"/>
-            </svg>
-          </button>
-
-          <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="modal"></button>
-        </div>
-
-        <div class="modal-body d-flex justify-content-center align-items-center position-relative">
-          <button class="btn btn-dark position-absolute start-0 translate-middle-y d-flex p-2 align-items-center justify-content-center"
-                  style="top:50%; margin-left:-10px;"
-                  id="prevImage">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-left" viewBox="0 0 16 16">
-              <path fill-rule="evenodd" d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0"/>
-            </svg>
-          </button>
-
-          <img id="modalImage" src="" alt="Full View" class="img-fluid rounded">
-
-          <button class="btn btn-dark position-absolute end-0 translate-middle-y d-flex p-2 align-items-center justify-content-center"
-                  style="top:50%; margin-right:-10px;"
-                  id="nextImage">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-right" viewBox="0 0 16 16">
-              <path fill-rule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708"/>
-            </svg>
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <footer class="py-3 mt-auto">
-    <hr />
-    <div class="container text-center text-muted">
-      <small>
-        사이트 개발: 시란 (새벽제작) | <a href="https://arca.live/b/dawncraft/149404969" target="_blank" rel="noreferrer">이용 가이드</a>
-      </small>
-    </div>
-  </footer>
 
   <script>
     // =========================
@@ -237,7 +133,7 @@
     }
 
     // =========================
-    // ✅ Range expansion for ALL codes (캐릭터/의상/상황)
+    // Range expansion
     // =========================
     function expandRangeToken(token) {
       if (token === '') return [''];
@@ -302,256 +198,20 @@
     }
 
     // =========================
-    // ✅ Presets (템플릿 저장/내보내기/가져오기)
+    // ✅ PowerShell 패키지 내보내기 (버튼 1번)
+    // - urls_*.txt + download.ps1 동시 다운로드
     // =========================
-    const PRESET_KEY = "image_viewer_presets_v1";
-
-    function loadPresetStore() {
-      try {
-        const raw = localStorage.getItem(PRESET_KEY);
-        if (!raw) return { version: 1, presets: [] };
-        const data = JSON.parse(raw);
-        if (!data || !Array.isArray(data.presets)) return { version: 1, presets: [] };
-        return data;
-      } catch {
-        return { version: 1, presets: [] };
-      }
-    }
-
-    function savePresetStore(data) {
-      localStorage.setItem(PRESET_KEY, JSON.stringify(data));
-    }
-
-    function normalizePreset(p) {
-      return {
-        name: (p?.name ?? '').toString(),
-        template: (p?.template ?? '').toString(),
-        character: (p?.character ?? '').toString(),
-        cloth: (p?.cloth ?? '').toString(),
-        situation: (p?.situation ?? '').toString(),
-        savedAt: p?.savedAt ?? new Date().toISOString(),
-      };
-    }
-
-    function getFormAsPreset(nameOverride) {
-      const name = (nameOverride ?? document.getElementById("presetName").value).trim();
-      return normalizePreset({
-        name,
-        template: document.getElementById("template").value.trim(),
-        character: document.getElementById("character").value.trim(),
-        cloth: document.getElementById("cloth").value.trim(),
-        situation: document.getElementById("situation").value.trim(),
-        savedAt: new Date().toISOString(),
-      });
-    }
-
-    function applyPresetToForm(preset) {
-      const p = normalizePreset(preset);
-      document.getElementById("template").value = p.template;
-      document.getElementById("character").value = p.character;
-      document.getElementById("cloth").value = p.cloth;
-      document.getElementById("situation").value = p.situation;
-      document.getElementById("presetName").value = p.name;
-    }
-
-    function findPresetIndexByName(store, name) {
-      return store.presets.findIndex(p => (p.name || "") === name);
-    }
-
-    function exportPresetsAsFile() {
-      const store = loadPresetStore();
-      const json = JSON.stringify(store, null, 2);
-      const blob = new Blob([json], { type: "application/json;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "image_viewer_presets.json";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-
-      URL.revokeObjectURL(url);
-    }
-
-    async function copyPresetsToClipboard() {
-      const store = loadPresetStore();
-      const json = JSON.stringify(store, null, 2);
-      await navigator.clipboard.writeText(json);
-      toast("프리셋 JSON 복사됨");
-    }
-
-    async function pastePresetsFromClipboard() {
-      const text = await navigator.clipboard.readText();
-      if (!text?.trim()) {
-        toast("클립보드가 비었음");
-        return;
-      }
-      importPresetsFromText(text);
-    }
-
-    function importPresetsFromText(text) {
-      let data;
-      try { data = JSON.parse(text); }
-      catch { alert("JSON 파싱 실패"); return; }
-
-      if (!data || !Array.isArray(data.presets)) {
-        alert("형식 오류: { presets: [...] } 형태가 아님");
-        return;
-      }
-
-      const store = loadPresetStore();
-      const incoming = data.presets.map(normalizePreset);
-
-      for (const p of incoming) {
-        if (!p.name) continue;
-        const idx = findPresetIndexByName(store, p.name);
-        if (idx >= 0) store.presets[idx] = p;
-        else store.presets.push(p);
-      }
-
-      savePresetStore(store);
-      refreshPresetSelect(true);
-      toast("가져오기 완료");
-    }
-
-    function importPresetsFromFile(file) {
-      const reader = new FileReader();
-      reader.onload = () => importPresetsFromText(reader.result);
-      reader.readAsText(file, "utf-8");
-    }
-
-    function toast(message) {
-      const wrapper = document.createElement("div");
-      wrapper.className = "toast align-items-center text-bg-dark border-0 position-fixed bottom-0 end-0 m-3";
-      wrapper.setAttribute("role", "alert");
-      wrapper.setAttribute("aria-live", "assertive");
-      wrapper.setAttribute("aria-atomic", "true");
-      wrapper.innerHTML = `
-        <div class="d-flex">
-          <div class="toast-body">${message}</div>
-          <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-        </div>
-      `;
-      document.body.appendChild(wrapper);
-      const t = new bootstrap.Toast(wrapper, { delay: 1500 });
-      t.show();
-      wrapper.addEventListener("hidden.bs.toast", () => wrapper.remove());
-    }
-
-    function refreshPresetSelect(keepName) {
-      const select = document.getElementById("presetSelect");
-      if (!select) return;
-
-      const store = loadPresetStore();
-      const currentValue = select.value;
-      const currentName = keepName ? document.getElementById("presetName").value : "";
-
-      select.innerHTML = "";
-      const opt0 = document.createElement("option");
-      opt0.value = "";
-      opt0.textContent = "선택...";
-      select.appendChild(opt0);
-
-      const sorted = store.presets.slice().sort((a, b) => (b.savedAt || "").localeCompare(a.savedAt || ""));
-      sorted.forEach((p, i) => {
-        const opt = document.createElement("option");
-        opt.value = String(i);
-        opt.textContent = p.name ? p.name : "(이름없음)";
-        select.appendChild(opt);
-      });
-
-      if (currentValue && Number(currentValue) < sorted.length) select.value = currentValue;
-      else select.value = "";
-
-      if (keepName) document.getElementById("presetName").value = currentName;
-    }
-
-    function initPresetUI() {
-      refreshPresetSelect(true);
-
-      document.getElementById("presetSelect")?.addEventListener("change", (e) => {
-        const store = loadPresetStore();
-        const idx = Number(e.target.value);
-        if (!e.target.value || Number.isNaN(idx)) return;
-
-        const sorted = store.presets.slice().sort((a, b) => (b.savedAt || "").localeCompare(a.savedAt || ""));
-        const preset = sorted[idx];
-        if (!preset) return;
-
-        applyPresetToForm(preset);
-        toast("프리셋 적용됨");
-      });
-
-      document.getElementById("savePresetBtn")?.addEventListener("click", () => {
-        const name = document.getElementById("presetName").value.trim();
-        if (!name) { alert("프리셋 이름을 입력해줘"); return; }
-
-        const store = loadPresetStore();
-        const p = getFormAsPreset(name);
-
-        const idx = findPresetIndexByName(store, name);
-        if (idx >= 0) store.presets[idx] = p;
-        else store.presets.push(p);
-
-        savePresetStore(store);
-        refreshPresetSelect(true);
-        toast("저장 완료");
-      });
-
-      document.getElementById("deletePresetBtn")?.addEventListener("click", () => {
-        const name = document.getElementById("presetName").value.trim();
-        if (!name) { alert("삭제할 프리셋 이름을 입력해줘"); return; }
-
-        const store = loadPresetStore();
-        const idx = findPresetIndexByName(store, name);
-        if (idx < 0) { alert("해당 이름의 프리셋이 없음"); return; }
-
-        store.presets.splice(idx, 1);
-        savePresetStore(store);
-        refreshPresetSelect(true);
-        toast("삭제 완료");
-      });
-
-      document.getElementById("exportPresetsBtn")?.addEventListener("click", exportPresetsAsFile);
-
-      document.getElementById("importPresetsFile")?.addEventListener("change", (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        importPresetsFromFile(file);
-        e.target.value = "";
-      });
-
-      document.getElementById("copyPresetsBtn")?.addEventListener("click", async () => {
-        try { await copyPresetsToClipboard(); }
-        catch { alert("클립보드 복사 실패(HTTPS/권한 필요할 수 있음)"); }
-      });
-
-      document.getElementById("pastePresetsBtn")?.addEventListener("click", async () => {
-        try { await pastePresetsFromClipboard(); }
-        catch {
-          const txt = prompt("붙여넣을 프리셋 JSON을 넣어줘");
-          if (txt) importPresetsFromText(txt);
-        }
-      });
-    }
-
-    // =========================
-    // ✅ 일괄 저장(다운로드) 유틸
-    // =========================
-    function getGalleryImageUrls() {
+    function getVisibleGalleryUrls() {
       const imgs = Array.from(document.querySelectorAll("#gallery-container img"));
       const urls = imgs
         .filter(img => img && img.src)
         .filter(img => {
-          // display:none 카드 제외(없는 이미지/로딩 전)
           const card = img.closest(".col-md-4");
           if (!card) return true;
           return card.style.display !== "none";
         })
         .map(img => img.src);
 
-      // 중복 제거(순서 유지)
       const seen = new Set();
       const uniq = [];
       for (const u of urls) {
@@ -560,113 +220,115 @@
       return uniq;
     }
 
-    function sanitizeFilename(name) {
-      return (name || "image")
-        .replace(/[\\/:*?"<>|]/g, "_")
-        .replace(/\s+/g, " ")
-        .trim();
-    }
-
-    function guessExtFromUrl(url) {
-      try {
-        const clean = url.split("#")[0].split("?")[0];
-        const m = clean.match(/\.([a-zA-Z0-9]{2,5})$/);
-        if (m) return m[1].toLowerCase();
-      } catch {}
-      return "webp";
-    }
-
-    function filenameFromUrl(url, fallbackIndex) {
-      try {
-        const u = new URL(url);
-        const path = u.pathname || "";
-        const base = decodeURIComponent(path.split("/").pop() || "");
-        if (base && base.includes(".")) return sanitizeFilename(base);
-        const ext = guessExtFromUrl(url);
-        return `image_${String(fallbackIndex).padStart(4, "0")}.${ext}`;
-      } catch {
-        const ext = guessExtFromUrl(url);
-        return `image_${String(fallbackIndex).padStart(4, "0")}.${ext}`;
-      }
-    }
-
-    async function downloadAsZip() {
-      const urls = getGalleryImageUrls();
-      if (urls.length === 0) { toast("저장할 이미지가 없음"); return; }
-
-      toast(`ZIP 생성 시작: ${urls.length}개`);
-      const zip = new JSZip();
-      const failed = [];
-
-      // 너무 동시에 하면 브라우저가 뻗을 수 있어서 순차 처리
-      for (let i = 0; i < urls.length; i++) {
-        const url = urls[i];
-        const name = filenameFromUrl(url, i + 1);
-
-        try {
-          const res = await fetch(url, { mode: "cors" });
-          if (!res.ok) throw new Error("HTTP " + res.status);
-          const blob = await res.blob();
-          zip.file(name, blob);
-        } catch (e) {
-          // CORS/403 등으로 실패할 수 있음
-          failed.push(url);
-        }
-      }
-
-      if (Object.keys(zip.files).length === 0) {
-        alert("ZIP 저장 실패: 서버가 CORS로 다운로드를 막는 경우가 많음.\n'전체 저장(여러 파일)' 버튼을 사용해봐.");
-        return;
-      }
-
-      const blob = await zip.generateAsync({ type: "blob" });
-      const zipName = `images_${new Date().toISOString().replace(/[:.]/g, "-")}.zip`;
-
+    function downloadTextFile(filename, text) {
+      const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = zipName;
+      a.href = url;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(a.href);
-
-      if (failed.length > 0) {
-        console.warn("ZIP에 못 담은 이미지:", failed);
-        alert(`ZIP은 저장했지만 ${failed.length}개는 CORS/권한 문제로 ZIP에 포함 못 했음.\n필요하면 '전체 저장(여러 파일)'로 시도해줘.`);
-      } else {
-        toast("ZIP 저장 완료");
-      }
+      URL.revokeObjectURL(url);
     }
 
-    async function downloadAsMultipleFiles() {
-      const urls = getGalleryImageUrls();
-      if (urls.length === 0) { toast("저장할 이미지가 없음"); return; }
+    function ps1ScriptContent() {
+      // NOTE: 여기 문자열 그대로 download.ps1로 저장됨
+      return String.raw`param(
+  [string]$UrlListPath = ".\urls.txt",
+  [string]$OutDir = ".\imgs"
+)
 
-      toast(`여러 파일 다운로드 시작: ${urls.length}개`);
+# 출력 폴더 생성
+New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
-      // 브라우저가 여러 다운로드를 차단할 수 있음 → 사용자가 사이트 설정에서 허용해야 할 수 있음
-      for (let i = 0; i < urls.length; i++) {
-        const url = urls[i];
-        const name = filenameFromUrl(url, i + 1);
+# TLS 설정(일부 환경에서 필요)
+try {
+  [Net.ServicePointManager]::SecurityProtocol = `
+    [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
+} catch {}
 
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = name; // cross-origin이면 무시될 수 있음(그래도 다운로드는 뜨는 편)
-        a.target = "_blank";
-        a.rel = "noreferrer";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
+# URL 목록 읽기 (빈 줄 제거 + 중복 제거)
+$urls = Get-Content $UrlListPath | Where-Object { $_ -and $_.Trim() -ne "" } | Select-Object -Unique
+if ($null -eq $urls -or $urls.Count -eq 0) {
+  Write-Host "URL이 없습니다: $UrlListPath"
+  exit 1
+}
 
-        // 너무 빠르게 누르면 일부가 씹힐 수 있어서 약간 텀
-        await new Promise(r => setTimeout(r, 120));
-      }
+function Get-SafeFileName([string]$name) {
+  if ([string]::IsNullOrWhiteSpace($name)) { return "" }
+  return ($name -replace '[\\/:*?"<>|]', "_").Trim()
+}
 
-      toast("다운로드 트리거 완료");
+function Guess-Ext-FromUrl([string]$url) {
+  try {
+    $clean = $url.Split('#')[0].Split('?')[0]
+    $m = [regex]::Match($clean, '\.([a-zA-Z0-9]{2,5})$')
+    if ($m.Success) { return $m.Groups[1].Value.ToLower() }
+  } catch {}
+  return "webp"
+}
+
+$index = 0
+foreach ($u in $urls) {
+  $index++
+
+  try {
+    $uri = [Uri]$u
+    $name = [IO.Path]::GetFileName($uri.AbsolutePath)
+
+    # URL 끝에 파일명이 없거나 확장자 없으면 순번 파일명 부여
+    if ([string]::IsNullOrWhiteSpace($name) -or -not ($name -match '\.')) {
+      $ext = Guess-Ext-FromUrl $u
+      $name = ("image_{0:0000}.{1}" -f $index, $ext)
     }
 
-    document.getElementById("downloadZipBtn")?.addEventListener("click", downloadAsZip);
-    document.getElementById("downloadMultiBtn")?.addEventListener("click", downloadAsMultipleFiles);
+    $safeName = Get-SafeFileName $name
+    if ([string]::IsNullOrWhiteSpace($safeName)) {
+      $safeName = ("image_{0:0000}.{1}" -f $index, (Guess-Ext-FromUrl $u))
+    }
+
+    $outPath = Join-Path $OutDir $safeName
+    Write-Host ("[{0}/{1}] 다운로드: {2} -> {3}" -f $index, $urls.Count, $u, $safeName)
+
+    # 헤더가 필요한 서버가 있으면 여기서 추가 가능:
+    # $headers = @{ "User-Agent" = "Mozilla/5.0" }
+    # Invoke-WebRequest -Uri $u -OutFile $outPath -Headers $headers -TimeoutSec 60
+
+    Invoke-WebRequest -Uri $u -OutFile $outPath -UseBasicParsing -TimeoutSec 60
+  }
+  catch {
+    Write-Warning "실패: $u"
+    Write-Warning $_.Exception.Message
+  }
+}
+
+Write-Host "완료: $OutDir"
+`;
+    }
+
+    document.getElementById("exportPackBtn")?.addEventListener("click", () => {
+      const urls = getVisibleGalleryUrls();
+      if (urls.length === 0) {
+        alert("내보낼 이미지 URL이 없음(목록생성 후 상세 화면에서 시도해줘)");
+        return;
+      }
+
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const urlFile = `urls_${stamp}.txt`;
+
+      // 1) urls txt 다운로드
+      downloadTextFile(urlFile, urls.join("\n"));
+
+      // 2) download.ps1 다운로드
+      downloadTextFile("download.ps1", ps1ScriptContent());
+
+      alert(
+        `다운로드됨:\n- ${urlFile}\n- download.ps1\n\n` +
+        `두 파일이 같은 폴더에 있을 때 PowerShell에서 아래 1줄 실행:\n` +
+        `powershell -ExecutionPolicy Bypass -File .\\download.ps1 -UrlListPath .\\${urlFile} -OutDir .\\imgs`
+      );
+    });
 
     // =========================
     // Form submission (querystring)
@@ -690,7 +352,6 @@
     const container = document.getElementById('gallery-container');
 
     setFormValues(templateParam, characterParam, clothParam, situationParam);
-    initPresetUI();
 
     const hasRequired =
       templateParam != null &&
@@ -731,11 +392,6 @@
           });
         });
       } else {
-        const failedItemsPanel = document.getElementById('failed-items-panel');
-        const failedItemsList = document.getElementById('failed-items');
-
-        const validSituations = new Set();
-
         function buildMatchImageUrl(situation) {
           const match = detailParam.match(/(\d+)-(\d+)/);
           if (!match) return null;
@@ -747,19 +403,6 @@
             .replace('캐릭터', characters[charIndex] ?? '')
             .replace('의상', clothes[clothIndex] ?? '')
             .replace('상황', situation ?? '');
-        }
-
-        function refreshFailedItems() {
-          const invalidSituations = situations.filter(sit => !validSituations.has(sit));
-          failedItemsList.innerHTML = '';
-
-          invalidSituations.forEach(sit => {
-            const li = document.createElement('li');
-            li.textContent = buildMatchImageUrl(sit);
-            failedItemsList.appendChild(li);
-          });
-
-          failedItemsPanel.style.display = invalidSituations.length > 0 ? 'block' : 'none';
         }
 
         situations.forEach(async (sit, si) => {
@@ -775,19 +418,11 @@
           img.addEventListener('load', function () {
             if (card.isConnected) {
               card.style.display = 'block';
-              validSituations.add(sit);
-              refreshFailedItems();
             }
           });
 
           img.addEventListener('error', function () {
             card.remove();
-            validSituations.delete(sit);
-            refreshFailedItems();
-          });
-
-          img.addEventListener('click', function () {
-            showImageModal(si);
           });
 
           img.src = imgUrl;
@@ -799,70 +434,7 @@
 
           if (!await checkImageExists(imgUrl)) {
             card.remove();
-            validSituations.delete(sit);
-            refreshFailedItems();
           }
-        });
-
-        // Image modal
-        const copyButton = document.getElementById('copyUrl');
-        const copyTooltip = new bootstrap.Tooltip(copyButton, { title: '복사됨!', trigger: 'manual' });
-
-        const prevButton = document.getElementById('prevImage');
-        const nextButton = document.getElementById('nextImage');
-
-        let modalIndex = 0;
-
-        function getPrevValidIndex(currentIndex) {
-          for (let i = currentIndex - 1; i >= 0; --i) {
-            if (validSituations.has(situations[i])) return i;
-          }
-          return -1;
-        }
-
-        function getNextValidIndex(currentIndex) {
-          for (let i = currentIndex + 1; i < situations.length; ++i) {
-            if (validSituations.has(situations[i])) return i;
-          }
-          return -1;
-        }
-
-        function updateImageModal(situationIndex) {
-          if (situationIndex < 0) return;
-
-          const imageUrl = buildMatchImageUrl(situations[situationIndex]);
-          if (!imageUrl) return;
-
-          modalIndex = situationIndex;
-          prevButton.style.visibility = getPrevValidIndex(modalIndex) < 0 ? 'hidden' : 'visible';
-          nextButton.style.visibility = getNextValidIndex(modalIndex) < 0 ? 'hidden' : 'visible';
-
-          document.getElementById('modalTitle').innerHTML = imageUrl;
-          document.getElementById('modalImage').src = imageUrl;
-        }
-
-        function showImageModal(situationIndex) {
-          if (!validSituations.has(situations[situationIndex])) return;
-
-          updateImageModal(situationIndex);
-          const modal = new bootstrap.Modal(document.getElementById('imageModal'));
-          modal.show();
-        }
-
-        copyButton.addEventListener('click', function () {
-          const titleText = document.getElementById('modalTitle').innerText;
-          navigator.clipboard.writeText(titleText).then(() => {
-            copyTooltip.show();
-            setTimeout(() => copyTooltip.hide(), 1000);
-          });
-        });
-
-        prevButton.addEventListener('click', function () {
-          updateImageModal(getPrevValidIndex(modalIndex));
-        });
-
-        nextButton.addEventListener('click', function () {
-          updateImageModal(getNextValidIndex(modalIndex));
         });
       }
     }
